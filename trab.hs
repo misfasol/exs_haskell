@@ -1,3 +1,5 @@
+import Control.Monad
+
 -- Tipos de token que a gente pode encontrar
 data TokenExpr
   = Var Char
@@ -11,20 +13,41 @@ data TokenExpr
   | FeParen
   deriving (Show, Eq)
 
+------------------------- lexer -------------------------
+
 -- o lexer serve para ler a string e transformar em tokens que sao mais faceis de utilizar
 lexer :: [Char] -> [TokenExpr]
 lexer [] = []
 lexer x
+  -- abre parenteses
   | "(" `prefixOf` x = AbParen : lexer (drop 1 x)
+  -- fecha parenteses
   | ")" `prefixOf` x = FeParen : lexer (drop 1 x)
+  -- ou
   | "v" `prefixOf` x = Disj : lexer (drop 1 x)
   | "ou" `prefixOf` x = Disj : lexer (drop 2 x)
+  | "or" `prefixOf` x = Disj : lexer (drop 2 x)
+  -- e
   | "^" `prefixOf` x = Conj : lexer (drop 1 x)
+  | "and" `prefixOf` x = Conj : lexer (drop 3 x)
+  | "e" `prefixOf` x = Conj : lexer (drop 1 x)
+  -- nao
   | "~" `prefixOf` x = Nao : lexer (drop 1 x)
+  | "not" `prefixOf` x = Conj : lexer (drop 3 x)
+  -- implicacao
   | "->" `prefixOf` x = Implica : lexer (drop 2 x)
+  | "=>" `prefixOf` x = Implica : lexer (drop 2 x)
+  | "→" `prefixOf` x = Implica : lexer (drop 1 x)
+  | ('\\' : "implies") `prefixOf` x = Implica : lexer (drop 8 x)
+  -- bicondicional
   | "<->" `prefixOf` x = BiCond : lexer (drop 3 x)
+  | "<=>" `prefixOf` x = BiCond : lexer (drop 3 x)
+  | "↔" `prefixOf` x = BiCond : lexer (drop 1 x)
+  -- variavel
   | head x `elem` ['A' .. 'Z'] = Var (head x) : lexer (drop 1 x)
+  -- outros
   | " " `prefixOf` x = lexer (drop 1 x)
+  | "\t" `prefixOf` x = lexer (drop 1 x)
   | otherwise = error $ "caractere invalido: " ++ [head x]
 
 -- verifica se uma string e o comeco da outra
@@ -35,6 +58,11 @@ prefixOf [] _ = True
 prefixOf _ [] = False
 prefixOf (x : xs) (y : ys) = x == y && prefixOf xs ys
 
+------------------------- parser -------------------------
+
+-- algoritmo de shuntingYard, ele transforma uma expressao em infix para postfix,
+-- que e mais facil de computar o resultado
+--
 --                Tokens          Stack         Output        Resultado
 shuntingYard :: [TokenExpr] -> [TokenExpr] -> [TokenExpr] -> [TokenExpr]
 shuntingYard [] [] o = o -- caso base
@@ -66,45 +94,72 @@ precedencia BiCond = 2
 precedencia AbParen = 1
 precedencia FeParen = 1
 
-avaliarCaso :: [TokenExpr] -> Caso
-avaliarCaso _ = Tautologia
-
--- avalia uma lista de tokens que nao tem mais variaveis, somente V ou F e operadores
-avaliarExpr :: [TokenExpr] -> [TokenExpr] -> Bool
-avaliarExpr [] [] = error "input vazio"
-avaliarExpr [] [Booleano b] = b
-avaliarExpr x (Nao : Booleano b : ss) = avaliarExpr x (Booleano (not b) : ss)
-avaliarExpr x (Conj : Booleano a : Booleano b : ss) = avaliarExpr x (Booleano (a && b) : ss)
-avaliarExpr x (Disj : Booleano a : Booleano b : ss) = avaliarExpr x (Booleano (a || b) : ss)
-avaliarExpr x (Implica : Booleano a : Booleano b : ss) = avaliarExpr x (Booleano (not a || b) : ss)
-avaliarExpr x (BiCond : Booleano a : Booleano b : ss) = avaliarExpr x (Booleano (a == b) : ss)
-avaliarExpr (x : xs) s = avaliarExpr xs (x : s)
-
--- troca todas as variaveis por V
-trocarPorV :: [TokenExpr] -> [TokenExpr]
-trocarPorV [] = []
-trocarPorV [Var r] = [Booleano True]
-trocarPorV [x] = [x]
-trocarPorV (Var r : xs) = Booleano True : trocarPorV xs
-trocarPorV (x : xs) = x : trocarPorV xs
-
--- retorna lista somente com variaveis
-variaveisExpr :: [TokenExpr] -> [TokenExpr]
-variaveisExpr = filter eVariavel
-
--- retorna se e variavel
-eVariavel :: TokenExpr -> Bool
-eVariavel (Var _) = True
-eVariavel _ = False
+------------------------- avaliacao -------------------------
 
 -- qual caso a expressao e
 data Caso
   = Tautologia
   | Contradicao
-  | Contingente [TokenExpr] [TokenExpr]
+  | Contingente
+  deriving (Show, Eq)
 
 -- ainda nao sei oq fazer
-data ClausulaHorn = ClausulaHorn
+data ClausulaHorn = ClausulaHorn deriving (Show, Eq)
+
+-- avalia o caso da expressao que ja esta shunted fornecida
+avaliarCaso :: [TokenExpr] -> Caso
+avaliarCaso x =
+  let variaveis = variaveisExpr x
+      combinacao = criarCombinacoes variaveis
+      resultados = [avaliarExpr (trocarVariaveis x l) [] | l <- combinacao]
+      -- retorna o que a expressao e baseado na lista de resultados
+      avaliaResultado :: [Bool] -> Caso
+      avaliaResultado lb
+        | and lb = Tautologia
+        | all not lb = Contradicao
+        | otherwise = Contingente
+   in avaliaResultado resultados
+
+-- retorna lista de tokens somente com as letras das variaveis
+variaveisExpr :: [TokenExpr] -> [Char]
+variaveisExpr x = map charDaVar (filter eVariavel x)
+  where
+    -- retorna o caractece de uma Variavel
+    charDaVar :: TokenExpr -> Char
+    charDaVar (Var r) = r
+    -- retorna se e uma Variavel ou nao
+    eVariavel :: TokenExpr -> Bool
+    eVariavel (Var _) = True
+    eVariavel _ = False
+
+-- cria combinacoes de V e F de uma lista de variaveis
+criarCombinacoes :: [Char] -> [[Bool]]
+criarCombinacoes c = replicateM (length c) [True, False]
+
+-- troca as variaveis de uma expressao por V ou F seguindo a lista
+trocarVariaveis :: [TokenExpr] -> [Bool] -> [TokenExpr]
+trocarVariaveis lt lb =
+  let tabela = zip (variaveisExpr lt) lb
+      -- converte uma Variavel para um Booleano dependendo do que ele e na tabela criada
+      conv :: TokenExpr -> TokenExpr
+      conv (Var r)
+        | (r, True) `elem` tabela = Booleano True
+        | (r, False) `elem` tabela = Booleano False
+      conv to = to
+   in map conv lt
+
+-- avalia uma lista de tokens que nao tem mais variaveis, somente V ou F e operadores
+avaliarExpr :: [TokenExpr] -> [TokenExpr] -> Bool
+avaliarExpr [] [] = error "input vazio"
+avaliarExpr [] [Booleano b] = b -- caso base
+avaliarExpr x (Nao : Booleano b : ss) = avaliarExpr x (Booleano (not b) : ss)
+avaliarExpr x (Conj : Booleano a : Booleano b : ss) = avaliarExpr x (Booleano (a && b) : ss)
+avaliarExpr x (Disj : Booleano a : Booleano b : ss) = avaliarExpr x (Booleano (a || b) : ss)
+avaliarExpr x (Implica : Booleano a : Booleano b : ss) = avaliarExpr x (Booleano (not a || b) : ss)
+avaliarExpr x (BiCond : Booleano a : Booleano b : ss) = avaliarExpr x (Booleano (a == b) : ss)
+avaliarExpr (x : xs) s = avaliarExpr xs (x : s) -- jogar o primeiro item do input na stack
+
+------------------------- funcao principal -------------------------
 
 -- funcao principal
 funcaoPrincipal :: String -> (Caso, ClausulaHorn)
@@ -114,15 +169,13 @@ funcaoPrincipal str = (caso, ClausulaHorn)
     dpsShunt = shuntingYard lexado [] []
     caso = avaliarCaso dpsShunt
 
+------------------------- main -------------------------
+
+main :: IO ()
 main = do
-  let str = "P v Q ^ R"
-  print str
-  let l = lexer str
-  print l
-  let p = shuntingYard l [] []
-  print p
-  let a = [Var 'R', Var 'P', Conj]
-  print a
-  let trocado = trocarPorV a
-  print trocado
-  print $ avaliarExpr [Booleano False, Booleano False, Booleano True, Conj, Disj] []
+  let str = "P v (Q ^~Q) \\implies P"
+  putStr "string: "
+  putStr str
+  putStr "\n"
+
+  print $ funcaoPrincipal str
