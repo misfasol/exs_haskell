@@ -47,14 +47,15 @@ shuntingYard [] [s] o = shuntingYard [] [] (o ++ [s])
 shuntingYard [] (AbParen : ss) o = error "parenteses abriu sem fechar"
 shuntingYard [] (s : ss) o = shuntingYard [] ss (o ++ [s])
 shuntingYard [Var r] s o = shuntingYard [] s (o ++ [Var r])
+shuntingYard [FeParen] (AbParen : ss) o = shuntingYard [] ss o
 shuntingYard [x] [] o = shuntingYard [] [x] o
 shuntingYard [x] (s : ss) o
   | precedencia x > precedencia s = shuntingYard [] (x : s : ss) o
   | otherwise = shuntingYard [x] ss (o ++ [s])
 shuntingYard (Var r : xs) s o = shuntingYard xs s (o ++ [Var r])
-shuntingYard (FeParen : xs) (s : ss) o
-  | precedencia FeParen == precedencia s = shuntingYard xs ss o
-  | otherwise = shuntingYard (FeParen : xs) ss (o ++ [s])
+shuntingYard (AbParen : xs) s o = shuntingYard xs (AbParen : s) o
+shuntingYard (FeParen : xs) (AbParen : ss) o = shuntingYard xs ss o
+shuntingYard (FeParen : xs) (s : ss) o = shuntingYard (FeParen : xs) ss (o ++ [s])
 shuntingYard (x : xs) [] o = shuntingYard xs [x] o
 shuntingYard (x : xs) (s : ss) o
   | precedencia x > precedencia s = shuntingYard xs (x : s : ss) o
@@ -68,7 +69,7 @@ precedencia AbParen = 1
 precedencia FeParen = 1
 
 main = do
-  let str = "(P v Q) ^ ~R"
+  let str = "P v Q ^ (R v S)"
   print str
   let l = lexer str
   print l
