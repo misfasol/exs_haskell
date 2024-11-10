@@ -42,10 +42,13 @@ prefixOf (x : xs) (y : ys) = x == y && prefixOf xs ys
 
 --          Tokens          Stack         Output        Resultado
 parser :: [TokenExpr] -> [TokenExpr] -> [TokenExpr] -> [TokenExpr]
-parser [] s o = o ++ s
+parser [] [] o = o
+parser [] [s] o = parser [] [] (o ++ [s])
+parser [] (AbParen : ss) o = error "parenteses abriu sem fechar"
+parser [] (s : ss) o = parser [] ss (o ++ [s])
 parser [Var r] s o = parser [] s (o ++ [Var r])
-parser [AbParen] [] o = error "parenteses abrindo sem fechar"
-parser [FeParen] [] o = error "parenteses fechando sem um aberto"
+-- parser [AbParen] [] o = error "parenteses abrindo sem fechar"
+-- parser [FeParen] [] o = error "parenteses fechando sem um aberto"
 parser [x] [] o = parser [] [x] o
 parser [x] (s : ss) o
   | precedencia x > precedencia s = parser [] (x : s : ss) o
@@ -67,7 +70,7 @@ precedencia AbParen = 1
 precedencia FeParen = 1
 
 main = do
-  let str = "(~P v Q) ^ R"
+  let str = "(P v Q) ^ ~R"
   print str
   let l = lexer str
   print l
