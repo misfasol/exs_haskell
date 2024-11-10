@@ -13,15 +13,19 @@
 -- evalExpr (Conj x y) = evalExpr x && evalExpr y
 -- evalExpr (Disj x y) = evalExpr x || evalExpr y
 
+-- Tipos de token que a gente pode encontrar
 data TokenExpr
   = Var Char
   | Nao
   | Conj
   | Disj
+  | Implica
+  | BiCond
   | AbParen
   | FeParen
   deriving (Show, Eq)
 
+-- o lexer serve para ler a string e transformar em tokens que sao mais faceis de utilizar
 lexer :: [Char] -> [TokenExpr]
 lexer [] = []
 lexer x
@@ -31,10 +35,15 @@ lexer x
   | "ou" `prefixOf` x = Disj : lexer (drop 2 x)
   | "^" `prefixOf` x = Conj : lexer (drop 1 x)
   | "~" `prefixOf` x = Nao : lexer (drop 1 x)
+  | "->" `prefixOf` x = Implica : lexer (drop 2 x)
+  | "<->" `prefixOf` x = BiCond : lexer (drop 3 x)
   | head x `elem` ['A' .. 'Z'] = Var (head x) : lexer (drop 1 x)
   | " " `prefixOf` x = lexer (drop 1 x)
   | otherwise = error $ "caractere invalido: " ++ [head x]
 
+-- verifica se uma string e o comeco da outra
+-- 1o arg: prefixo para testar
+-- 2o arg: string que vamos ver se tem o prefixo
 prefixOf :: String -> String -> Bool
 prefixOf [] _ = True
 prefixOf _ [] = False
@@ -62,14 +71,16 @@ shuntingYard (x : xs) (s : ss) o
   | otherwise = shuntingYard (x : xs) ss (o ++ [s])
 
 precedencia :: TokenExpr -> Int
-precedencia Nao = 4
-precedencia Conj = 3
-precedencia Disj = 2
+precedencia Nao = 6
+precedencia Conj = 5
+precedencia Disj = 4
+precedencia Implica = 3
+precedencia BiCond = 2
 precedencia AbParen = 1
 precedencia FeParen = 1
 
 main = do
-  let str = "P v Q ^ (R v S)"
+  let str = "P -> (Q v R)"
   print str
   let l = lexer str
   print l
