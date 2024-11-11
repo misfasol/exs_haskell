@@ -21,28 +21,35 @@ lexer [] = []
 lexer x
   -- abre parenteses
   | "(" `prefixOf` x = AbParen : lexer (drop 1 x)
+  | "\\(" `prefixOf` x = AbParen : lexer (drop 2 x)
   -- fecha parenteses
   | ")" `prefixOf` x = FeParen : lexer (drop 1 x)
+  | "\\)" `prefixOf` x = FeParen : lexer (drop 2 x)
   -- ou
   | "v" `prefixOf` x = Disj : lexer (drop 1 x)
   | "ou" `prefixOf` x = Disj : lexer (drop 2 x)
   | "or" `prefixOf` x = Disj : lexer (drop 2 x)
+  | "\\vee" `prefixOf` x = Disj : lexer (drop 4 x)
   -- e
   | "^" `prefixOf` x = Conj : lexer (drop 1 x)
-  | "and" `prefixOf` x = Conj : lexer (drop 3 x)
   | "e" `prefixOf` x = Conj : lexer (drop 1 x)
+  | "and" `prefixOf` x = Conj : lexer (drop 3 x)
+  | "\\wedge" `prefixOf` x = Conj : lexer (drop 6 x)
   -- nao
   | "~" `prefixOf` x = Nao : lexer (drop 1 x)
-  | "not" `prefixOf` x = Conj : lexer (drop 3 x)
+  | "not" `prefixOf` x = Nao : lexer (drop 3 x)
+  | "\\neg" `prefixOf` x = Nao : lexer (drop 4 x)
   -- implicacao
   | "->" `prefixOf` x = Implica : lexer (drop 2 x)
   | "=>" `prefixOf` x = Implica : lexer (drop 2 x)
   | "→" `prefixOf` x = Implica : lexer (drop 1 x)
-  | ('\\' : "implies") `prefixOf` x = Implica : lexer (drop 8 x)
+  | "\\Rightarrow" `prefixOf` x = Implica : lexer (drop 11 x)
+  | "\\implies" `prefixOf` x = Implica : lexer (drop 8 x)
   -- bicondicional
   | "<->" `prefixOf` x = BiCond : lexer (drop 3 x)
   | "<=>" `prefixOf` x = BiCond : lexer (drop 3 x)
   | "↔" `prefixOf` x = BiCond : lexer (drop 1 x)
+  | "\\Leftrightaarow" `prefixOf` x = BiCond : lexer (drop 15 x)
   -- variavel
   | head x `elem` ['A' .. 'Z'] = Var (head x) : lexer (drop 1 x)
   -- outros
@@ -93,6 +100,41 @@ precedencia Implica = 3
 precedencia BiCond = 2
 precedencia AbParen = 1
 precedencia FeParen = 1
+
+-- trasformar para uma expressao
+data Expr
+  = EVar Char
+  | ENao Expr
+  | EConj Expr Expr
+  | EDisj Expr Expr
+  | EImpli Expr Expr
+  | EBiCon Expr Expr
+  deriving (Show, Eq)
+
+transfTokenExpr :: [TokenExpr] -> Expr
+transfTokenExpr x = fst $ transfTokenExprDois $ reverse x
+
+transfTokenExprDois :: [TokenExpr] -> (Expr, [TokenExpr])
+transfTokenExprDois (Var r : xs) = (EVar r, xs)
+transfTokenExprDois (Nao : xs) = (ENao x, xs')
+  where
+    (x, xs') = transfTokenExprDois xs
+transfTokenExprDois (Conj : xs) = (EConj y x, xs'')
+  where
+    (x, xs') = transfTokenExprDois xs
+    (y, xs'') = transfTokenExprDois xs'
+transfTokenExprDois (Disj : xs) = (EDisj y x, xs'')
+  where
+    (x, xs') = transfTokenExprDois xs
+    (y, xs'') = transfTokenExprDois xs'
+transfTokenExprDois (Implica : xs) = (EImpli y x, xs'')
+  where
+    (x, xs') = transfTokenExprDois xs
+    (y, xs'') = transfTokenExprDois xs'
+transfTokenExprDois (BiCond : xs) = (EBiCon y x, xs'')
+  where
+    (x, xs') = transfTokenExprDois xs
+    (y, xs'') = transfTokenExprDois xs'
 
 ------------------------- avaliacao -------------------------
 
@@ -161,9 +203,15 @@ avaliarExpr (x : xs) s = avaliarExpr xs (x : s) -- jogar o primeiro item do inpu
 
 ------------------------- funcao principal -------------------------
 
+-- funcao que recebe o caso e retorna uma string em latex
+toLatex :: Caso -> String
+toLatex Tautologia = "$$\\text{Tautologia}$$"
+toLatex Contradicao = "$$\\text{Contradição}$$"
+toLatex Contingente = "$$\\text{Contingente}$$"
+
 -- funcao principal
-funcaoPrincipal :: String -> (Caso, ClausulaHorn)
-funcaoPrincipal str = (caso, ClausulaHorn)
+funcaoPrincipal :: String -> (Caso, ClausulaHorn, String, [TokenExpr], Expr)
+funcaoPrincipal str = (caso, ClausulaHorn, toLatex caso, dpsShunt, transfTokenExpr dpsShunt)
   where
     lexado = lexer str
     dpsShunt = shuntingYard lexado [] []
@@ -173,9 +221,13 @@ funcaoPrincipal str = (caso, ClausulaHorn)
 
 main :: IO ()
 main = do
-  let str = "P v (Q ^~Q) \\implies P"
-  putStr "string: "
-  putStr str
+  let str = "~A -> B"
+  putStr $ "string: " ++ str
   putStr "\n"
 
-  print $ funcaoPrincipal str
+  let (c, ch, s, t, e) = funcaoPrincipal str
+  print c
+  print ch
+  print s
+  print t
+  print e
