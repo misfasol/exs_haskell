@@ -101,7 +101,9 @@ precedencia BiCond = 2
 precedencia AbParen = 1
 precedencia FeParen = 1
 
--- trasformar para uma expressao
+------------------------- expressao e transformacoes -------------------------
+
+-- expressao
 data Expr
   = EVar Char
   | ENao Expr
@@ -111,9 +113,13 @@ data Expr
   | EBiCon Expr Expr
   deriving (Show, Eq)
 
+-- transformar lista de tokens para expressao
+-- como ta em notacao polonesa reversa, tem que inverter antes de jogar na funcao
 transfTokenExpr :: [TokenExpr] -> Expr
 transfTokenExpr x = fst $ transfTokenExprDois $ reverse x
 
+-- a funcao de transformacao em si
+-- inverte x e y por antes estar em notacao polonesa reversa
 transfTokenExprDois :: [TokenExpr] -> (Expr, [TokenExpr])
 transfTokenExprDois (Var r : xs) = (EVar r, xs)
 transfTokenExprDois (Nao : xs) = (ENao x, xs')
@@ -135,6 +141,37 @@ transfTokenExprDois (BiCond : xs) = (EBiCon y x, xs'')
   where
     (x, xs') = transfTokenExprDois xs
     (y, xs'') = transfTokenExprDois xs'
+
+-- eliminar implicacoes
+elimImpli :: Expr -> Expr
+elimImpli (EVar x) = EVar x
+elimImpli (ENao x) = ENao (elimImpli x)
+elimImpli (EConj x y) = EConj (elimImpli x) (elimImpli y)
+elimImpli (EDisj x y) = EDisj (elimImpli x) (elimImpli y)
+elimImpli (EImpli x y) = EDisj (ENao (elimImpli x)) (elimImpli y)
+elimImpli (EBiCon x y) = EConj (EImpli (elimImpli x) (elimImpli y)) (EImpli (elimImpli y) (elimImpli x))
+
+-- eliminar negacoes
+-- nao e pra ter mais implicacao
+-- nao e pra ter mais bicondicional
+elimNeg :: Expr -> Expr
+elimNeg (EVar x) = EVar x
+elimNeg (EConj x y) = EConj (elimNeg x) (elimNeg y)
+elimNeg (EDisj x y) = EDisj (elimNeg x) (elimNeg y)
+elimNeg (ENao x) = case x of
+  EVar a -> ENao (EVar a)
+  ENao a -> a
+  EConj a b -> elimNeg (EDisj (ENao (elimNeg a)) (ENao (elimNeg b)))
+  EDisj a b -> elimNeg (EConj (ENao (elimNeg a)) (ENao (elimNeg b)))
+
+-- transforma a expressao para string
+exprParaStr :: Expr -> String
+exprParaStr (EVar x) = x : ""
+exprParaStr (ENao x) = "~" ++ exprParaStr x
+exprParaStr (EConj x y) = "(" ++ exprParaStr x ++ " ^ " ++ exprParaStr y ++ ")"
+exprParaStr (EDisj x y) = "(" ++ exprParaStr x ++ " v " ++ exprParaStr y ++ ")"
+exprParaStr (EImpli x y) = "(" ++ exprParaStr x ++ " -> " ++ exprParaStr y ++ ")"
+exprParaStr (EBiCon x y) = "(" ++ exprParaStr x ++ " <-> " ++ exprParaStr y ++ ")"
 
 ------------------------- avaliacao -------------------------
 
@@ -221,7 +258,7 @@ funcaoPrincipal str = (caso, ClausulaHorn, toLatex caso, dpsShunt, transfTokenEx
 
 main :: IO ()
 main = do
-  let str = "~A -> B"
+  let str = "~(~A v ~B)"
   putStr $ "string: " ++ str
   putStr "\n"
 
@@ -231,3 +268,4 @@ main = do
   print s
   print t
   print e
+  putStrLn $ exprParaStr $ elimNeg $ elimImpli e
