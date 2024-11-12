@@ -204,11 +204,21 @@ avaliarCasoProp x =
   let variaveis = variaveisProp x
       combinacoes = criarCombinacoes variaveis
       resultados = [avaliarProp (trocarVarProp x l) | l <- combinacoes]
+      -- funcao que acha a primeira ocorrencia de True ou False nos resultados
+      acharPrimeiro :: [(Bool, [Bool])] -> Bool -> [Bool]
+      acharPrimeiro [] x = error "utilizacao da funcao acharPrimeiro em lista vazia (talvez nao seja contingencia)" -- como so vamos chamar em contigencia nunca deveria chegar aqui
+      acharPrimeiro [(x, l)] b
+        | b == x = l
+        | otherwise = error "utilizacao da funcao acharPrimeiro em nao contingencia"
+      acharPrimeiro ((x, l) : xs) b
+        | x == b = l
+        | otherwise = acharPrimeiro xs b
+      -- funcao que avalia os resultados
       avaliaResultado :: [Bool] -> Caso
       avaliaResultado lb
         | and lb = Tautologia
         | all not lb = Contradicao
-        | otherwise = Contingente
+        | otherwise = Contingente (zip variaveis (acharPrimeiro (zip resultados combinacoes) True)) (zip variaveis (acharPrimeiro (zip resultados combinacoes) False))
    in avaliaResultado resultados
 
 -- transforma a expressao para string
@@ -226,7 +236,7 @@ exprParaStr (PBiCon x y) = "(" ++ exprParaStr x ++ " <-> " ++ exprParaStr y ++ "
 data Caso
   = Tautologia
   | Contradicao
-  | Contingente
+  | Contingente [(Char, Bool)] [(Char, Bool)]
   deriving (Show, Eq)
 
 -- ainda nao sei oq fazer
@@ -292,7 +302,7 @@ criarCombinacoes c = replicateM (length c) [True, False]
 toLatex :: Caso -> String
 toLatex Tautologia = "$$\\text{Tautologia}$$"
 toLatex Contradicao = "$$\\text{Contradição}$$"
-toLatex Contingente = "$$\\text{Contingente}$$"
+toLatex (Contingente x y) = "$$\\text{Contingente}$$"
 
 -- funcao principal
 funcaoPrincipal :: String -> (Caso, ClausulaHorn, String, [TokenExpr], Prop)
@@ -307,7 +317,7 @@ funcaoPrincipal str = (caso, ClausulaHorn, toLatex caso, dpsShunt, prop)
 
 main :: IO ()
 main = do
-  let str = "A ^ ~A"
+  let str = "A -> B"
   putStr $ "string: " ++ str
   putStr "\n"
 
