@@ -180,6 +180,19 @@ elimNeg (PNao x) = case x of
   PConj a b -> elimNeg (PDisj (PNao (elimNeg a)) (PNao (elimNeg b)))
   PDisj a b -> elimNeg (PConj (PNao (elimNeg a)) (PNao (elimNeg b)))
 
+-- faz a distributiva
+distributivaProp :: Prop -> Prop
+distributivaProp e = case e of
+  PNao e1 -> PNao (distributivaProp e1)
+  PBool s -> PBool s
+  PVar r -> PVar r
+  PConj e1 e2 -> PConj (distributivaProp e1) (distributivaProp e2)
+  PDisj e1 e2 -> case e1 of
+    PConj se1 se2 -> distributivaProp (PConj (PDisj se1 e2) (PDisj se2 e2))
+    _ -> case e2 of
+      PConj se1 se2 -> distributivaProp (PConj (PDisj e1 se1) (PDisj e1 se2))
+      _ -> PDisj (distributivaProp e1) (distributivaProp e2)
+
 -- avalia a proposicao que nao tem mais variaveis, somente V ou F
 avaliarProp :: Prop -> Bool
 avaliarProp (PBool x) = x
@@ -189,6 +202,7 @@ avaliarProp (PDisj x y) = avaliarProp x || avaliarProp y
 avaliarProp (PImpli x y) = not (avaliarProp x) || avaliarProp y
 avaliarProp (PBiCon x y) = avaliarProp x == avaliarProp y
 
+-- retorna uma lsita de variaveis de uma proposicao
 variaveisProp :: Prop -> [Char]
 variaveisProp (PBool b) = []
 variaveisProp (PVar r) = [r]
@@ -242,59 +256,9 @@ data Caso
 -- ainda nao sei oq fazer
 data ClausulaHorn = ClausulaHorn deriving (Show, Eq)
 
--- avalia o caso da expressao que ja esta shunted fornecida
--- avaliarCaso :: [TokenExpr] -> Caso
--- avaliarCaso x =
---   let variaveis = variaveisExpr x
---       combinacao = criarCombinacoes variaveis
---       resultados = [avaliarExpr (trocarVariaveis x l) [] | l <- combinacao]
---       -- retorna o que a expressao e baseado na lista de resultados
---       avaliaResultado :: [Bool] -> Caso
---       avaliaResultado lb
---         | and lb = Tautologia
---         | all not lb = Contradicao
---         | otherwise = Contingente
---    in avaliaResultado resultados
-
--- retorna lista de tokens somente com as letras das variaveis
--- variaveisExpr :: [TokenExpr] -> [Char]
--- variaveisExpr x = map charDaVar (filter eVariavel x)
---   where
---     -- retorna o caractece de uma Variavel
---     charDaVar :: TokenExpr -> Char
---     charDaVar (Var r) = r
---     -- retorna se e uma Variavel ou nao
---     eVariavel :: TokenExpr -> Bool
---     eVariavel (Var _) = True
---     eVariavel _ = False
-
 -- cria combinacoes de V e F de uma lista de variaveis
 criarCombinacoes :: [Char] -> [[Bool]]
 criarCombinacoes c = replicateM (length c) [True, False]
-
--- troca as variaveis de uma expressao por V ou F seguindo a lista
--- trocarVariaveis :: [TokenExpr] -> [Bool] -> [TokenExpr]
--- trocarVariaveis lt lb =
---   let tabela = zip (variaveisExpr lt) lb
---       -- converte uma Variavel para um Booleano dependendo do que ele e na tabela criada
---       conv :: TokenExpr -> TokenExpr
---       conv (Var r)
---         | (r, True) `elem` tabela = Booleano True
---         | (r, False) `elem` tabela = Booleano False
---       conv to = to
---    in map conv lt
-
--- avalia uma lista de tokens que nao tem mais variaveis, somente V ou F e operadores
--- avaliarExpr :: [TokenExpr] -> [TokenExpr] -> Bool
--- avaliarExpr [] [] = error "input vazio"
--- avaliarExpr [] [Booleano b] = b -- caso base
--- avaliarExpr x (Nao : Booleano b : ss) = avaliarExpr x (Booleano (not b) : ss)
--- avaliarExpr x (Nao : Nao : Booleano b : ss) = avaliarExpr x (Booleano b : ss)
--- avaliarExpr x (Conj : Booleano a : Booleano b : ss) = avaliarExpr x (Booleano (a && b) : ss)
--- avaliarExpr x (Disj : Booleano a : Booleano b : ss) = avaliarExpr x (Booleano (a || b) : ss)
--- avaliarExpr x (Implica : Booleano a : Booleano b : ss) = avaliarExpr x (Booleano (not a || b) : ss)
--- avaliarExpr x (BiCond : Booleano a : Booleano b : ss) = avaliarExpr x (Booleano (a == b) : ss)
--- avaliarExpr (x : xs) s = avaliarExpr xs (x : s) -- jogar o primeiro item do input na stack
 
 ------------------------- funcao principal -------------------------
 
@@ -305,26 +269,27 @@ toLatex Contradicao = "$$\\text{Contradição}$$"
 toLatex (Contingente x y) = "$$\\text{Contingente}$$"
 
 -- funcao principal
-funcaoPrincipal :: String -> (Caso, ClausulaHorn, String, [TokenExpr], Prop)
-funcaoPrincipal str = (caso, ClausulaHorn, toLatex caso, dpsShunt, prop)
+funcaoPrincipal :: String -> (Caso, ClausulaHorn, String, [TokenExpr], Prop, Prop)
+funcaoPrincipal str = (caso, ClausulaHorn, toLatex caso, dpsShunt, prop, fnc)
   where
     lexado = lexer str
     dpsShunt = shuntingYard lexado [] []
     prop = transfTokenProp dpsShunt
     caso = avaliarCasoProp prop
+    fnc = distributivaProp $ elimNeg $ elimImpli $ prop
 
 ------------------------- main -------------------------
 
 main :: IO ()
 main = do
-  let str = "A -> B"
+  let str = "(A ^ B) v C"
   putStr $ "string: " ++ str
   putStr "\n"
 
-  let (c, ch, s, t, e) = funcaoPrincipal str
+  let (c, ch, s, t, e, d) = funcaoPrincipal str
   print c
   print ch
   print s
   print t
   print e
-  putStrLn $ exprParaStr $ elimNeg $ elimImpli e
+  putStrLn $ exprParaStr $ d
