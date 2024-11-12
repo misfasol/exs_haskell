@@ -166,7 +166,7 @@ elimImpli (PNao x) = PNao (elimImpli x)
 elimImpli (PConj x y) = PConj (elimImpli x) (elimImpli y)
 elimImpli (PDisj x y) = PDisj (elimImpli x) (elimImpli y)
 elimImpli (PImpli x y) = PDisj (PNao (elimImpli x)) (elimImpli y)
-elimImpli (PBiCon x y) = PConj (PImpli (elimImpli x) (elimImpli y)) (PImpli (elimImpli y) (elimImpli x))
+elimImpli (PBiCon x y) = elimImpli $ PConj (PImpli (elimImpli x) (elimImpli y)) (PImpli (elimImpli y) (elimImpli x))
 
 -- eliminar negacoes
 -- nao e pra ter mais implicacao nem bicondicional
@@ -276,13 +276,13 @@ funcaoPrincipal str = (caso, ClausulaHorn, toLatex caso, dpsShunt, prop, fnc)
     dpsShunt = shuntingYard lexado [] []
     prop = transfTokenProp dpsShunt
     caso = avaliarCasoProp prop
-    fnc = distributivaProp $ elimNeg $ elimImpli $ prop
+    fnc = distributivaProp $ elimNeg $ elimImpli prop
 
 ------------------------- main -------------------------
 
 main :: IO ()
 main = do
-  let str = "(A ^ B) v C"
+  let str = "P v (Q ^~Q) <-> P"
   putStr $ "string: " ++ str
   putStr "\n"
 
@@ -292,4 +292,4 @@ main = do
   print s
   print t
   print e
-  putStrLn $ exprParaStr $ d
+  putStrLn $ exprParaStr d
