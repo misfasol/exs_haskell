@@ -27,16 +27,19 @@ lexer x
   | "\\)" `prefixOf` x = FeParen : lexer (drop 2 x)
   -- ou
   | "v" `prefixOf` x = Disj : lexer (drop 1 x)
+  | "∨" `prefixOf` x = Disj : lexer (drop 1 x)
   | "ou" `prefixOf` x = Disj : lexer (drop 2 x)
   | "or" `prefixOf` x = Disj : lexer (drop 2 x)
   | "\\vee" `prefixOf` x = Disj : lexer (drop 4 x)
   -- e
   | "^" `prefixOf` x = Conj : lexer (drop 1 x)
+  | "∧" `prefixOf` x = Conj : lexer (drop 1 x)
   | "e" `prefixOf` x = Conj : lexer (drop 1 x)
   | "and" `prefixOf` x = Conj : lexer (drop 3 x)
   | "\\wedge" `prefixOf` x = Conj : lexer (drop 6 x)
   -- nao
   | "~" `prefixOf` x = Nao : lexer (drop 1 x)
+  | "¬" `prefixOf` x = Nao : lexer (drop 1 x)
   | "not" `prefixOf` x = Nao : lexer (drop 3 x)
   | "\\neg" `prefixOf` x = Nao : lexer (drop 4 x)
   -- implicacao
@@ -189,15 +192,15 @@ distributivaProp p
 -- faz a distributiva parcial
 distributivaPropDois :: Prop -> Prop
 distributivaPropDois e = case e of
-  PNao e1 -> PNao (distributivaPropDois e1)
-  PBool s -> PBool s
-  PVar r -> PVar r
-  PConj e1 e2 -> PConj (distributivaPropDois e1) (distributivaPropDois e2)
-  PDisj e1 e2 -> case e1 of
-    PConj se1 se2 -> distributivaPropDois (PConj (PDisj se1 e2) (PDisj se2 e2))
-    _ -> case e2 of
-      PConj se1 se2 -> distributivaPropDois (PConj (PDisj e1 se1) (PDisj e1 se2))
-      _ -> PDisj (distributivaPropDois e1) (distributivaPropDois e2)
+  PNao x -> PNao (distributivaPropDois x)
+  PBool x -> PBool x
+  PVar x -> PVar x
+  PConj x y -> PConj (distributivaPropDois x) (distributivaPropDois y)
+  PDisj x y -> case x of
+    PConj x2 y2 -> distributivaPropDois (PConj (PDisj x2 y) (PDisj y2 y))
+    _ -> case y of
+      PConj x3 y3 -> distributivaPropDois (PConj (PDisj x x3) (PDisj x y3))
+      _ -> PDisj (distributivaPropDois x) (distributivaPropDois y)
 
 -- avalia a proposicao que nao tem mais variaveis, somente V ou F
 avaliarProp :: Prop -> Bool
@@ -241,6 +244,10 @@ avaliarCasoProp x =
         | otherwise = Contingente (nub (zip variaveis (acharPrimeiro (zip resultados combinacoes) True))) (nub (zip variaveis (acharPrimeiro (zip resultados combinacoes) False)))
    in avaliaResultado resultados
 
+-- cria combinacoes de V e F de uma lista de variaveis
+criarCombinacoes :: [Char] -> [[Bool]]
+criarCombinacoes c = replicateM (length c) [True, False]
+
 -- remove duplicatas de uma lista
 nub :: (Eq a) => [a] -> [a] -- remove todas as duplicatas de uma lista
 nub [] = []
@@ -264,6 +271,46 @@ fncParaStr (PNao x) = "~" ++ fncParaStr x
 fncParaStr (PDisj x y) = fncParaStr x ++ " v " ++ fncParaStr y
 fncParaStr (PConj x y) = "(" ++ fncParaStr x ++ ") ^ (" ++ fncParaStr y ++ ")"
 
+------------------------- fnc e horn -------------------------
+
+data Literal
+  = VarPos Char
+  | VarNeg Char
+  deriving (Show, Eq)
+
+type Clausula = [Literal]
+
+eHorn :: Clausula -> Bool
+eHorn [] = False -- talvez tenha que dar erro aqui
+eHorn x = qtdPos <= 1
+  where
+    (qtdPos, qtdNeg) = contarLits x
+
+contarLits :: Clausula -> (Int, Int)
+contarLits [] = (0, 0)
+contarLits [VarPos _] = (1, 0)
+contarLits [VarNeg _] = (0, 1)
+contarLits (VarPos _ : xs) = (1 + qtdPos, 0 + qtdNeg)
+  where
+    (qtdPos, qtdNeg) = contarLits xs
+contarLits (VarNeg _ : xs) = (0 + qtdPos, 1 + qtdNeg)
+  where
+    (qtdPos, qtdNeg) = contarLits xs
+
+disjParaClausula :: Prop -> Clausula
+disjParaClausula (PVar r) = [VarPos r]
+disjParaClausula (PNao (PVar r)) = [VarNeg r]
+disjParaClausula (PDisj x y) = disjParaClausula x ++ disjParaClausula y
+disjParaClausula (PConj _ _) = error "nunca deveria ter uma conjuncao aqui"
+
+type FNC = [Clausula]
+
+propFncParaFNC :: Prop -> FNC
+propFncParaFNC (PConj x y) = propFncParaFNC x ++ propFncParaFNC y
+propFncParaFNC (PDisj x y) = [disjParaClausula x ++ disjParaClausula y]
+propFncParaFNC (PVar r) = [[VarPos r]]
+propFncParaFNC (PNao (PVar r)) = [[VarNeg r]]
+
 ------------------------- avaliacao -------------------------
 
 -- qual caso a expressao e
@@ -275,10 +322,6 @@ data Caso
 
 -- ainda nao sei oq fazer
 data ClausulaHorn = ClausulaHorn deriving (Show, Eq)
-
--- cria combinacoes de V e F de uma lista de variaveis
-criarCombinacoes :: [Char] -> [[Bool]]
-criarCombinacoes c = replicateM (length c) [True, False]
 
 ------------------------- funcao principal -------------------------
 
@@ -303,18 +346,22 @@ funcaoPrincipal str = (caso, ClausulaHorn, toLatex caso, dpsShunt, prop, fnc)
 main :: IO ()
 main = do
   -- let str = "P ^ ~Q v R v ~V ^ A ^ B v ~C"
-  let str = "(P v A) ^ Q"
+  let str = "(X v Y)"
+  -- let str = "(A∨P∨R∨(¬C))∧(B∨P∨R∨(¬C))∧(A∨R∨(¬C)∨(¬Q))∧(B∨R∨(¬C)∨(¬Q))∧(P∨R∨(¬C)∨(¬S))∧(R∨(¬C)∨(¬Q)∨(¬S))"
   putStr $ "string: " ++ str
   putStr "\n"
 
-  let (c, ch, s, t, e, d) = funcaoPrincipal str
+  let (c, ch, s, t, e, f) = funcaoPrincipal str
   print c
   print ch
   print s
   print t
   print e
-  putStrLn $ fncParaStr d
+  putStrLn $ fncParaStr f
   putStrLn "depois"
-  putStrLn $ fncParaStr $ distributivaProp d
+  putStrLn "em fnc"
+  print $ show $ propFncParaFNC f
+  putStrLn "clausulas de horn"
+  print $ show $ filter eHorn $ propFncParaFNC f
 
 -- print $ avaliarCasoProp $ distributivaProp d
