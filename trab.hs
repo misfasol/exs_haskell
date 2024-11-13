@@ -101,7 +101,7 @@ precedencia BiCond = 2
 precedencia AbParen = 1
 precedencia FeParen = 1
 
-------------------------- expressao e transformacoes -------------------------
+------------------------- proposicao e transformacoes -------------------------
 
 -- proposicao
 data Prop
@@ -180,18 +180,24 @@ elimNeg (PNao x) = case x of
   PConj a b -> elimNeg (PDisj (PNao (elimNeg a)) (PNao (elimNeg b)))
   PDisj a b -> elimNeg (PConj (PNao (elimNeg a)) (PNao (elimNeg b)))
 
--- faz a distributiva
+-- chama a distributiva ate que nao haja mais mudancas
 distributivaProp :: Prop -> Prop
-distributivaProp e = case e of
-  PNao e1 -> PNao (distributivaProp e1)
+distributivaProp p
+  | p == distributivaPropDois p = p
+  | otherwise = distributivaProp $ distributivaPropDois p
+
+-- faz a distributiva parcial
+distributivaPropDois :: Prop -> Prop
+distributivaPropDois e = case e of
+  PNao e1 -> PNao (distributivaPropDois e1)
   PBool s -> PBool s
   PVar r -> PVar r
-  PConj e1 e2 -> PConj (distributivaProp e1) (distributivaProp e2)
+  PConj e1 e2 -> PConj (distributivaPropDois e1) (distributivaPropDois e2)
   PDisj e1 e2 -> case e1 of
-    PConj se1 se2 -> distributivaProp (PConj (PDisj se1 e2) (PDisj se2 e2))
+    PConj se1 se2 -> distributivaPropDois (PConj (PDisj se1 e2) (PDisj se2 e2))
     _ -> case e2 of
-      PConj se1 se2 -> distributivaProp (PConj (PDisj e1 se1) (PDisj e1 se2))
-      _ -> PDisj (distributivaProp e1) (distributivaProp e2)
+      PConj se1 se2 -> distributivaPropDois (PConj (PDisj e1 se1) (PDisj e1 se2))
+      _ -> PDisj (distributivaPropDois e1) (distributivaPropDois e2)
 
 -- avalia a proposicao que nao tem mais variaveis, somente V ou F
 avaliarProp :: Prop -> Bool
@@ -202,7 +208,7 @@ avaliarProp (PDisj x y) = avaliarProp x || avaliarProp y
 avaliarProp (PImpli x y) = not (avaliarProp x) || avaliarProp y
 avaliarProp (PBiCon x y) = avaliarProp x == avaliarProp y
 
--- retorna uma lsita de variaveis de uma proposicao
+-- retorna uma lista de variaveis de uma proposicao
 variaveisProp :: Prop -> [Char]
 variaveisProp (PBool b) = []
 variaveisProp (PVar r) = [r]
@@ -232,8 +238,15 @@ avaliarCasoProp x =
       avaliaResultado lb
         | and lb = Tautologia
         | all not lb = Contradicao
-        | otherwise = Contingente (zip variaveis (acharPrimeiro (zip resultados combinacoes) True)) (zip variaveis (acharPrimeiro (zip resultados combinacoes) False))
+        | otherwise = Contingente (nub (zip variaveis (acharPrimeiro (zip resultados combinacoes) True))) (nub (zip variaveis (acharPrimeiro (zip resultados combinacoes) False)))
    in avaliaResultado resultados
+
+-- remove duplicatas de uma lista
+nub :: (Eq a) => [a] -> [a] -- remove todas as duplicatas de uma lista
+nub [] = []
+nub (x : xs)
+  | x `elem` xs = nub xs
+  | otherwise = x : nub xs
 
 -- transforma a expressao para string
 exprParaStr :: Prop -> String
@@ -243,6 +256,13 @@ exprParaStr (PConj x y) = "(" ++ exprParaStr x ++ " ^ " ++ exprParaStr y ++ ")"
 exprParaStr (PDisj x y) = "(" ++ exprParaStr x ++ " v " ++ exprParaStr y ++ ")"
 exprParaStr (PImpli x y) = "(" ++ exprParaStr x ++ " -> " ++ exprParaStr y ++ ")"
 exprParaStr (PBiCon x y) = "(" ++ exprParaStr x ++ " <-> " ++ exprParaStr y ++ ")"
+
+-- transforma uma fnc para string
+fncParaStr :: Prop -> String
+fncParaStr (PVar r) = r : ""
+fncParaStr (PNao x) = "~" ++ fncParaStr x
+fncParaStr (PDisj x y) = fncParaStr x ++ " v " ++ fncParaStr y
+fncParaStr (PConj x y) = "(" ++ fncParaStr x ++ ") ^ (" ++ fncParaStr y ++ ")"
 
 ------------------------- avaliacao -------------------------
 
@@ -282,7 +302,8 @@ funcaoPrincipal str = (caso, ClausulaHorn, toLatex caso, dpsShunt, prop, fnc)
 
 main :: IO ()
 main = do
-  let str = "P v (Q ^~Q) <-> P"
+  -- let str = "P ^ ~Q v R v ~V ^ A ^ B v ~C"
+  let str = "(P v A) ^ Q"
   putStr $ "string: " ++ str
   putStr "\n"
 
@@ -292,4 +313,8 @@ main = do
   print s
   print t
   print e
-  putStrLn $ exprParaStr d
+  putStrLn $ fncParaStr d
+  putStrLn "depois"
+  putStrLn $ fncParaStr $ distributivaProp d
+
+-- print $ avaliarCasoProp $ distributivaProp d
