@@ -121,6 +121,13 @@ data Prop
   | PBiCon Prop Prop
   deriving (Show, Eq)
 
+-- qual caso a expressao e
+data Caso
+  = Tautologia
+  | Contradicao
+  | Contingente {contPos :: [(Char, Bool)], contNeg :: [(Char, Bool)]}
+  deriving (Show, Eq)
+
 -- transformar lista de tokens para proposicao
 -- como ta em notacao polonesa reversa, tem que inverter antes de jogar na funcao
 transfTokenProp :: [TokenExpr] -> Prop
@@ -260,6 +267,8 @@ nub (x : xs)
   | x `elem` xs = nub xs
   | otherwise = x : nub xs
 
+------------------------- funcoes nao utilizadas -------------------------
+
 -- transforma a expressao para string
 exprParaStr :: Prop -> String
 exprParaStr (PVar x) = x : ""
@@ -270,11 +279,11 @@ exprParaStr (PImpli x y) = "(" ++ exprParaStr x ++ " -> " ++ exprParaStr y ++ ")
 exprParaStr (PBiCon x y) = "(" ++ exprParaStr x ++ " <-> " ++ exprParaStr y ++ ")"
 
 -- transforma uma fnc para string
-fncParaStr :: Prop -> String
-fncParaStr (PVar r) = r : ""
-fncParaStr (PNao x) = "~" ++ fncParaStr x
-fncParaStr (PDisj x y) = fncParaStr x ++ " v " ++ fncParaStr y
-fncParaStr (PConj x y) = "(" ++ fncParaStr x ++ ") ^ (" ++ fncParaStr y ++ ")"
+fncPropParaStr :: Prop -> String
+fncPropParaStr (PVar r) = r : ""
+fncPropParaStr (PNao x) = "~" ++ fncPropParaStr x
+fncPropParaStr (PDisj x y) = fncPropParaStr x ++ " v " ++ fncPropParaStr y
+fncPropParaStr (PConj x y) = "(" ++ fncPropParaStr x ++ ") ^ (" ++ fncPropParaStr y ++ ")"
 
 ------------------------- fnc e horn -------------------------
 
@@ -316,23 +325,15 @@ propFncParaFNC (PDisj x y) = [disjParaClausula x ++ disjParaClausula y]
 propFncParaFNC (PVar r) = [[VarPos r]]
 propFncParaFNC (PNao (PVar r)) = [[VarNeg r]]
 
-------------------------- avaliacao -------------------------
-
--- qual caso a expressao e
-data Caso
-  = Tautologia
-  | Contradicao
-  | Contingente {contPos :: [(Char, Bool)], contNeg :: [(Char, Bool)]}
-  deriving (Show, Eq)
-
 ------------------------- funcao principal -------------------------
 
 -- Retorno:
 --      Caso (se contingente mostrar uma atribuição que dá verdadeiro e outra falsa)
 --      Clausula de Horn (se não possível mostrar por que não)
+--      Fórmula recebida em Forma Normal Conjuntiva
 -- funcao principal
-funcaoPrincipal :: String -> (Caso, [Clausula])
-funcaoPrincipal str = (caso, horns)
+funcaoPrincipal :: String -> (Caso, [Clausula], FNC)
+funcaoPrincipal str = (caso, horns, fncFnc)
   where
     lexado = lexer str
     dpsShunt = shuntingYard lexado [] []
@@ -343,32 +344,64 @@ funcaoPrincipal str = (caso, horns)
     horns = filter eHorn fncFnc
 
 -- printar funcao principal bonito
-principalToStr :: (Caso, [Clausula]) -> String
-principalToStr (c, l) = "Caso: " ++ casoParaStr c ++ "Numero de Clausulas de Horn: " ++ show qtdClausulas ++ "\n" ++ if qtdClausulas == 0 then "" else clausulasParaStr l
+principalToStr :: (Caso, [Clausula], FNC) -> String
+principalToStr (c, l, f) =
+  "------------\nCaso: "
+    ++ casoParaStr c
+    ++ "------------"
+    ++ "\nNumero de Clausulas de Horn: "
+    ++ show qtdClausulas
+    ++ "\n"
+    ++ if qtdClausulas == 0
+      then
+        ""
+      else
+        ( "Em LaTeX:\n"
+            ++ clausulasParaStr l clauParaStr
+            ++ "\nNao LaTeX:\n"
+            ++ clausulasParaStr l clauBonitoParaStr
+        )
+          ++ "\n------------"
+          ++ "\nFNC em LaTeX:\n"
+          ++ fncParaStr f clauParaStr "\\land"
+          ++ "\nFNC nao LaTeX:\n"
+          ++ fncParaStr f clauBonitoParaStr "^"
+          ++ "\n------------"
   where
     qtdClausulas = length l
     --
     casoParaStr :: Caso -> String
-    casoParaStr (Contingente p n) = "Contingente\nPara ficar positivo: " ++ show p ++ "\nPara ficar negativo: " ++ show n ++ "\n"
+    casoParaStr (Contingente p n) = "Contingente\nPara ficar positivo: " ++ posNegParaStr p ++ "\nPara ficar negativo: " ++ posNegParaStr n ++ "\n"
     casoParaStr x = show x ++ "\n"
     --
-    clausulasParaStr :: [Clausula] -> String
-    clausulasParaStr [] = ""
-    clausulasParaStr (x : xs) = clauParaStr x ++ if null xs then "" else "\n" ++ clausulasParaStr xs
+    posNegParaStr :: [(Char, Bool)] -> String
+    posNegParaStr [] = ""
+    posNegParaStr ((r, b) : xs) = r : '=' : show b ++ if null xs then "" else " | " ++ posNegParaStr xs
+    --
+    clausulasParaStr :: [Clausula] -> (Clausula -> String) -> String
+    clausulasParaStr [] _ = ""
+    clausulasParaStr (x : xs) f = f x ++ if null xs then "" else "\n" ++ clausulasParaStr xs f
     --
     clauParaStr :: Clausula -> String
     clauParaStr [] = ""
     clauParaStr (VarPos r : xs) = r : (if null xs then "" else " \\lor " ++ clauParaStr xs)
     clauParaStr (VarNeg r : xs) = "\\neg " ++ r : (if null xs then "" else " \\lor " ++ clauParaStr xs)
+    --
+    clauBonitoParaStr :: Clausula -> String
+    clauBonitoParaStr [] = ""
+    clauBonitoParaStr (VarPos x : xs) = x : if null xs then "" else " v " ++ clauBonitoParaStr xs
+    clauBonitoParaStr (VarNeg x : xs) = "~" ++ x : if null xs then "" else " v " ++ clauBonitoParaStr xs
+    --
+    fncParaStr :: FNC -> (Clausula -> String) -> String -> String
+    fncParaStr [] _ _ = ""
+    fncParaStr (x : xs) f e = "(" ++ f x ++ ")" ++ if null xs then "" else " " ++ e ++ " " ++ fncParaStr xs f e
 
 ------------------------- main -------------------------
 
 main :: IO ()
 main = do
-  let str = "(P v ~R) ^ (Q v ~V)"
-  -- let str = "(A∨P∨R∨(¬C))∧(B∨P∨R∨(¬C))∧(A∨R∨(¬C)∨(¬Q))∧(B∨R∨(¬C)∨(¬Q))∧(P∨R∨(¬C)∨(¬S))∧(R∨(¬C)∨(¬Q)∨(¬S))"
-  -- let str = "~A v A"
+  let str = "A <-> B"
   putStrLn $ "string: " ++ str
 
-  let (c, fnc) = funcaoPrincipal str
-  putStrLn $ principalToStr (c, fnc)
+  let (caso, horns, fnc) = funcaoPrincipal str
+  putStrLn $ principalToStr (caso, horns, fnc)
