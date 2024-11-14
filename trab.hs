@@ -31,15 +31,18 @@ lexer x
   | "ou" `prefixOf` x = Disj : lexer (drop 2 x)
   | "or" `prefixOf` x = Disj : lexer (drop 2 x)
   | "\\vee" `prefixOf` x = Disj : lexer (drop 4 x)
+  | "\\lor" `prefixOf` x = Disj : lexer (drop 4 x)
   -- e
   | "^" `prefixOf` x = Conj : lexer (drop 1 x)
   | "∧" `prefixOf` x = Conj : lexer (drop 1 x)
   | "e" `prefixOf` x = Conj : lexer (drop 1 x)
   | "and" `prefixOf` x = Conj : lexer (drop 3 x)
   | "\\wedge" `prefixOf` x = Conj : lexer (drop 6 x)
+  | "\\land" `prefixOf` x = Conj : lexer (drop 5 x)
   -- nao
   | "~" `prefixOf` x = Nao : lexer (drop 1 x)
   | "¬" `prefixOf` x = Nao : lexer (drop 1 x)
+  | "nao" `prefixOf` x = Nao : lexer (drop 3 x)
   | "not" `prefixOf` x = Nao : lexer (drop 3 x)
   | "\\neg" `prefixOf` x = Nao : lexer (drop 4 x)
   -- implicacao
@@ -53,6 +56,7 @@ lexer x
   | "<=>" `prefixOf` x = BiCond : lexer (drop 3 x)
   | "↔" `prefixOf` x = BiCond : lexer (drop 1 x)
   | "\\Leftrightaarow" `prefixOf` x = BiCond : lexer (drop 15 x)
+  | "\\iff" `prefixOf` x = BiCond : lexer (drop 4 x)
   -- variavel
   | head x `elem` ['A' .. 'Z'] = Var (head x) : lexer (drop 1 x)
   -- outros
@@ -225,6 +229,7 @@ variaveisProp (PBiCon x y) = variaveisProp x ++ variaveisProp y
 avaliarCasoProp :: Prop -> Caso
 avaliarCasoProp x =
   let variaveis = variaveisProp x
+      -- combinacoes = reverse $ criarCombinacoes variaveis
       combinacoes = criarCombinacoes variaveis
       resultados = [avaliarProp (trocarVarProp x l) | l <- combinacoes]
       -- funcao que acha a primeira ocorrencia de True ou False nos resultados
@@ -317,51 +322,53 @@ propFncParaFNC (PNao (PVar r)) = [[VarNeg r]]
 data Caso
   = Tautologia
   | Contradicao
-  | Contingente [(Char, Bool)] [(Char, Bool)]
+  | Contingente {contPos :: [(Char, Bool)], contNeg :: [(Char, Bool)]}
   deriving (Show, Eq)
-
--- ainda nao sei oq fazer
-data ClausulaHorn = ClausulaHorn deriving (Show, Eq)
 
 ------------------------- funcao principal -------------------------
 
--- funcao que recebe o caso e retorna uma string em latex
-toLatex :: Caso -> String
-toLatex Tautologia = "$$\\text{Tautologia}$$"
-toLatex Contradicao = "$$\\text{Contradição}$$"
-toLatex (Contingente x y) = "$$\\text{Contingente}$$"
-
+-- Retorno:
+--      Caso (se contingente mostrar uma atribuição que dá verdadeiro e outra falsa)
+--      Clausula de Horn (se não possível mostrar por que não)
 -- funcao principal
-funcaoPrincipal :: String -> (Caso, ClausulaHorn, String, [TokenExpr], Prop, Prop)
-funcaoPrincipal str = (caso, ClausulaHorn, toLatex caso, dpsShunt, prop, fnc)
+funcaoPrincipal :: String -> (Caso, [Clausula])
+funcaoPrincipal str = (caso, horns)
   where
     lexado = lexer str
     dpsShunt = shuntingYard lexado [] []
-    prop = transfTokenProp dpsShunt
-    caso = avaliarCasoProp prop
-    fnc = distributivaProp $ elimNeg $ elimImpli prop
+    propShunt = transfTokenProp dpsShunt
+    caso = avaliarCasoProp propShunt
+    fncProp = distributivaProp $ elimNeg $ elimImpli propShunt
+    fncFnc = propFncParaFNC fncProp
+    horns = filter eHorn fncFnc
+
+-- printar funcao principal bonito
+principalToStr :: (Caso, [Clausula]) -> String
+principalToStr (c, l) = "Caso: " ++ casoParaStr c ++ "Numero de Clausulas de Horn: " ++ show qtdClausulas ++ "\n" ++ if qtdClausulas == 0 then "" else clausulasParaStr l
+  where
+    qtdClausulas = length l
+    --
+    casoParaStr :: Caso -> String
+    casoParaStr (Contingente p n) = "Contingente\nPara ficar positivo: " ++ show p ++ "\nPara ficar negativo: " ++ show n ++ "\n"
+    casoParaStr x = show x ++ "\n"
+    --
+    clausulasParaStr :: [Clausula] -> String
+    clausulasParaStr [] = ""
+    clausulasParaStr (x : xs) = clauParaStr x ++ if null xs then "" else "\n" ++ clausulasParaStr xs
+    --
+    clauParaStr :: Clausula -> String
+    clauParaStr [] = ""
+    clauParaStr (VarPos r : xs) = r : (if null xs then "" else " \\lor " ++ clauParaStr xs)
+    clauParaStr (VarNeg r : xs) = "\\neg " ++ r : (if null xs then "" else " \\lor " ++ clauParaStr xs)
 
 ------------------------- main -------------------------
 
 main :: IO ()
 main = do
-  -- let str = "P ^ ~Q v R v ~V ^ A ^ B v ~C"
-  let str = "(X v Y)"
+  let str = "(P v ~R) ^ (Q v ~V)"
   -- let str = "(A∨P∨R∨(¬C))∧(B∨P∨R∨(¬C))∧(A∨R∨(¬C)∨(¬Q))∧(B∨R∨(¬C)∨(¬Q))∧(P∨R∨(¬C)∨(¬S))∧(R∨(¬C)∨(¬Q)∨(¬S))"
-  putStr $ "string: " ++ str
-  putStr "\n"
+  -- let str = "~A v A"
+  putStrLn $ "string: " ++ str
 
-  let (c, ch, s, t, e, f) = funcaoPrincipal str
-  print c
-  print ch
-  print s
-  print t
-  print e
-  putStrLn $ fncParaStr f
-  putStrLn "depois"
-  putStrLn "em fnc"
-  print $ show $ propFncParaFNC f
-  putStrLn "clausulas de horn"
-  print $ show $ filter eHorn $ propFncParaFNC f
-
--- print $ avaliarCasoProp $ distributivaProp d
+  let (c, fnc) = funcaoPrincipal str
+  putStrLn $ principalToStr (c, fnc)
